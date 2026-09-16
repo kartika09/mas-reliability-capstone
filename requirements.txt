@@ -1,0 +1,7 @@
+pydantic>=2.0
+pytest>=7.0
+
+# Add these when you start implementing the real modules:
+# sentence-transformers   # for embedding similarity (context/semantic checks, peer claim matching)
+# transformers            # for DeBERTa/RoBERTa-MNLI (NLI-based contradiction/intent checks)
+# torch                   # backend for the above
