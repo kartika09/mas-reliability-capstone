@@ -21,9 +21,10 @@ from agents.agents import PlannerAgent, EvidenceAgent, CriticalAgent
 from llm_client import MockLLMClient
 from validation.sequential_validator import validate
 from peer_consistency.checker import check as peer_check
-from guard.decision import decide
+from guard.decision import decide, DISAGREEMENT_THRESHOLD
+from guard.recovery import recover
 from evaluation.logger import log_message, log_run_result
-from schemas.models import RunResult, FaultRecord
+from schemas.models import RunResult, FaultRecord, ValidationResult, PeerConsistencyResult, GuardDecision
 
 Condition = Literal["A_baseline", "B_sequential_only", "C_proposed"]
 
@@ -63,33 +64,50 @@ def run_pipeline(
     if condition in ("B_sequential_only", "C_proposed"):
         validation_result = validate(planner_output, evidence_output, "Evidence")
     else:
-        from schemas.models import ValidationResult
         validation_result = ValidationResult(valid=True, reason="validation disabled (baseline)")
 
     # 4. Peer-consistency check (condition C only)
     if condition == "C_proposed":
         peer_result = peer_check(evidence_output, critical_output)
     else:
-        from schemas.models import PeerConsistencyResult
         peer_result = PeerConsistencyResult(disagreement_score=0.0)
 
     # 5. Guard decision
     if condition == "A_baseline":
-        from schemas.models import GuardDecision
         guard_result = GuardDecision(decision="ALLOW", explanation="baseline: no guard active")
     else:
         guard_result = decide(validation_result, peer_result)
 
-    # 6. Recovery (stub for now -- Person D fills this in)
+    # 6. Recovery: if the guard says RECOVER, actually regenerate Evidence's
+    # output and verify it with the OTHER signal than the one that flagged it
+    # (never let a check verify its own detection -- see guard/recovery.py).
     recovered = verified = abstained = False
+    final_evidence_output = evidence_output
     if guard_result.decision == "RECOVER":
-        recovered = True
-        verified = False  # placeholder until guard/recovery.py is implemented for real
-        abstained = not verified
+        def regenerate_fn(_current_output):
+            return evidence_agent.produce(planner_output.subtask_evidence)
 
-    # 7. Planner synthesis
-    final_report = planner.synthesize(evidence_output, critical_output)
-    log_message(run_id, "Planner", "FinalReport", final_report.model_dump())
+        def verify_fn(new_output):
+            if "sequential" in guard_result.triggered_by:
+                # sequential validator was the flag -> verify with peer check
+                return peer_check(new_output, critical_output).disagreement_score <= DISAGREEMENT_THRESHOLD
+            # peer check was the flag -> verify with sequential validator
+            return validate(planner_output, new_output, "Evidence").valid
+
+        final_evidence_output, recovered, verified, abstained = recover(
+            evidence_output, regenerate_fn, verify_fn, guard_result.triggered_by
+        )
+
+    # 7. Planner synthesis -- uses the (possibly recovered) Evidence output,
+    # and is skipped on ABSTAIN so a report the pipeline couldn't verify
+    # never goes out looking identical to a normal one.
+    if abstained:
+        final_report_dict = {"summary": None, "supporting_claims": [], "abstained": True}
+        log_message(run_id, "Planner", "FinalReport", final_report_dict)
+    else:
+        final_report = planner.synthesize(final_evidence_output, critical_output)
+        final_report_dict = final_report.model_dump()
+        log_message(run_id, "Planner", "FinalReport", final_report_dict)
 
     detected = guard_result.decision != "ALLOW"
     detected_by = "none"
@@ -111,10 +129,13 @@ def run_pipeline(
         recovered=recovered,
         verified=verified,
         abstained=abstained,
+        disagreement_score=peer_result.disagreement_score,
+        validation_reason=validation_result.reason,
+        model=getattr(llm, "model", llm.__class__.__name__),
         latency_seconds=time.time() - start,
     )
     log_run_result(result.model_dump())
-    return final_report.model_dump(), result
+    return final_report_dict, result
 
 
 if __name__ == "__main__":

@@ -36,16 +36,21 @@ class MockLLMClient:
                 "subtask_evidence": "Find papers supporting a comparison of GPT-4 and Gemini.",
                 "subtask_critical": "Find papers that challenge or complicate that comparison.",
             })
-        if "Evidence" in system_prompt:
-            return json.dumps({
-                "claims": [
-                    {"claim": "Paper X shows GPT-4 outperforms Gemini on reasoning benchmarks.", "supporting_reference": "Paper X"}
-                ]
-            })
-        if "Critical" in system_prompt:
+        # NOTE: match on how the prompt OPENS, not just whether a role name
+        # appears anywhere in it. Each agent's prompt mentions the OTHER
+        # agent's name too (e.g. Evidence's prompt says "...have not seen
+        # the Critical agent's output"), so a plain substring check on either
+        # name matches both prompts and makes the two agents always agree.
+        if system_prompt.startswith("You are the Critical agent"):
             return json.dumps({
                 "claims": [
                     {"claim": "Paper X actually reports no significant difference between the two models.", "supporting_reference": "Paper X"}
+                ]
+            })
+        if system_prompt.startswith("You are the Evidence agent"):
+            return json.dumps({
+                "claims": [
+                    {"claim": "Paper X shows GPT-4 outperforms Gemini on reasoning benchmarks.", "supporting_reference": "Paper X"}
                 ]
             })
         return json.dumps({})

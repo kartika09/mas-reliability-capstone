@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+logs/
+.env
+*.env
+.venv/
+venv/
+mas_scifact_dataset.json
+scifact_raw/

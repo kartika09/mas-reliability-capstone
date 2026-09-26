@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pipeline import run_pipeline
 from fault_injection.injector import drop_field_example
-from agents.agents import EvidenceAgent
+from agents.agents import EvidenceAgent, CriticalAgent
 from llm_client import MockLLMClient
 
 
@@ -46,6 +46,11 @@ def test_all_three_conditions_produce_a_report():
         report, result = run_pipeline("Test question", condition=condition)
         assert "summary" in report
 
+def test_mock_gives_critical_and_evidence_different_outputs():
+    llm = MockLLMClient()
+    evidence_claim = EvidenceAgent(llm).produce("x").claims[0].claim
+    critical_claim = CriticalAgent(llm).produce("x").claims[0].claim
+    assert evidence_claim != critical_claim
 
 if __name__ == "__main__":
     test_pipeline_runs_baseline()

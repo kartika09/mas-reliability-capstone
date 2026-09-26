@@ -87,3 +87,8 @@ class RunResult(BaseModel):
     abstained: bool = False
     final_correct: Optional[bool] = None
     latency_seconds: float = 0.0
+    
+    disagreement_score: Optional[float] = None   # raw score from peer_consistency.checker
+    validation_reason: str = ""                  # raw reason from validation.sequential_validator
+    model: str = ""                               # e.g. "mock", "grok-beta"
+    seed: Optional[int] = None                    # sampling seed, when the client supports one
