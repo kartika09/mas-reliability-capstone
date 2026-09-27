@@ -32,13 +32,29 @@ class PlannerAgent:
         return FinalReport(**json.loads(raw))
 
 
+def _format_context(context: list[dict] | None) -> str:
+    """Turns retrieved passages into a block the agent must cite from.
+    context is optional so old callers (and the mock-based tests) keep
+    working with no change -- passing nothing means no RAG context is used."""
+    if not context:
+        return ""
+    blocks = []
+    for p in context:
+        text = p.get("text") or " ".join(p.get("sentences", []))
+        blocks.append(f"[{p['passage_id']}] {p.get('title', '')}: {text}")
+    return (
+        "\n\nRelevant abstracts (cite the passage_id in supporting_reference, "
+        "and only use these as your source):\n" + "\n\n".join(blocks)
+    )
+
+
 class EvidenceAgent:
     def __init__(self, llm: LLMClient):
         self.llm = llm
 
-    def produce(self, subtask: str) -> EvidenceOutput:
+    def produce(self, subtask: str, context: list[dict] | None = None) -> EvidenceOutput:
         system = "You are the Evidence agent. Work independently -- you have not seen the Critical agent's output."
-        user = f"Subtask: {subtask}"
+        user = f"Subtask: {subtask}" + _format_context(context)
         raw = self.llm.complete(system, user)
         return EvidenceOutput(**json.loads(raw))
 
@@ -47,8 +63,8 @@ class CriticalAgent:
     def __init__(self, llm: LLMClient):
         self.llm = llm
 
-    def produce(self, subtask: str) -> CriticalOutput:
+    def produce(self, subtask: str, context: list[dict] | None = None) -> CriticalOutput:
         system = "You are the Critical agent. Work independently -- you have not seen the Evidence agent's output."
-        user = f"Subtask: {subtask}"
+        user = f"Subtask: {subtask}" + _format_context(context)
         raw = self.llm.complete(system, user)
         return CriticalOutput(**json.loads(raw))

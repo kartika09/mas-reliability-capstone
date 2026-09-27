@@ -25,7 +25,7 @@ from guard.decision import decide, DISAGREEMENT_THRESHOLD
 from guard.recovery import recover
 from evaluation.logger import log_message, log_run_result
 from schemas.models import RunResult, FaultRecord, ValidationResult, PeerConsistencyResult, GuardDecision
-
+from retrieval.retriever import Index, retrieve
 Condition = Literal["A_baseline", "B_sequential_only", "C_proposed"]
 
 
@@ -35,6 +35,8 @@ def run_pipeline(
     injected_fault: Optional[FaultRecord] = None,
     fault_injector_fn=None,  # callable(evidence_output) -> (mutated_output, FaultRecord), or None
     llm_client=None,
+    retrieval_index: Optional[Index] = None,  # pass retrieval.retriever.build_index(...) to turn on RAG
+    top_k: int = 5,
 ) -> tuple[dict, RunResult]:
     run_id = str(uuid.uuid4())[:8]
     start = time.time()
@@ -48,9 +50,18 @@ def run_pipeline(
     planner_output = planner.decompose(research_question)
     log_message(run_id, "Planner", "Evidence+Critical", planner_output.model_dump())
 
-    # 2. Evidence and Critical produce INDEPENDENT outputs (neither sees the other yet)
-    evidence_output = evidence_agent.produce(planner_output.subtask_evidence)
-    critical_output = critical_agent.produce(planner_output.subtask_critical)
+    # 2. Evidence and Critical produce INDEPENDENT outputs (neither sees the other yet).
+    # If a retrieval index was passed in, look up the top-k abstracts for this
+    # claim ONCE and give the same context to both agents -- Evidence uses it
+    # to find support, Critical uses it to find what refutes it.
+    context = None
+    if retrieval_index is not None:
+        context = retrieve(retrieval_index, research_question, k=top_k)
+        log_message(run_id, "Retriever", "Evidence+Critical",
+                    {"claim": research_question, "passage_ids": [p["passage_id"] for p in context]})
+
+    evidence_output = evidence_agent.produce(planner_output.subtask_evidence, context=context)
+    critical_output = critical_agent.produce(planner_output.subtask_critical, context=context)
 
     # 2b. Optionally inject a fault into Evidence's output, post-hoc, before validation
     fault_record = injected_fault
