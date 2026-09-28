@@ -8,3 +8,4 @@ logs/
 venv/
 mas_scifact_dataset.json
 scifact_raw/
+mas_scifact_dataset*.json
