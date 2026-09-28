@@ -1,7 +1,7 @@
 from dataset import load_dataset
 from retrieval.retriever import build_index, retrieve
 
-data = load_dataset("mas_scifact_dataset (1).json")
+data = load_dataset("mas_scifact_dataset.json")
 print("Building index over", len(data["corpus"]), "abstracts (only needs to run once per session)...")
 index = build_index(data["corpus"])
 
