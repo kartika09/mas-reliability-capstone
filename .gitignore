@@ -6,6 +6,7 @@ logs/
 *.env
 .venv/
 venv/
-mas_scifact_dataset.json
+mas_scifact_dataset (*.json
+mas_scifact_dataset(*.json
 scifact_raw/
-mas_scifact_dataset*.json
+results/
