@@ -231,7 +231,7 @@ def test_detection_flows_from_pipeline_into_rows(tmp_path, monkeypatch):
     # Pretend the sequential validator flags everything.
     monkeypatch.setattr(
         "pipeline.validate",
-        lambda planner_output, agent_output, agent_name: ValidationResult(
+        lambda planner_output, agent_output, agent_name, context=None: ValidationResult(
             valid=False, reason="forced", failed_checks=["structural"]
         ),
     )
@@ -251,7 +251,7 @@ def test_detection_flows_from_pipeline_into_rows(tmp_path, monkeypatch):
 def test_judge_fn_populates_final_correct_and_false_recovery(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "pipeline.validate",
-        lambda planner_output, agent_output, agent_name: ValidationResult(valid=False, reason="forced"),
+        lambda planner_output, agent_output, agent_name, context=None: ValidationResult(valid=False, reason="forced"),
     )
     _, out = _run(
         tmp_path, monkeypatch, fault_names=["drop_field"], severities=["low"],

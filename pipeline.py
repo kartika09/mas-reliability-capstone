@@ -26,6 +26,7 @@ from guard.recovery import recover
 from evaluation.logger import log_message, log_run_result
 from schemas.models import RunResult, FaultRecord, ValidationResult, PeerConsistencyResult, GuardDecision
 from retrieval.retriever import Index, retrieve
+
 Condition = Literal["A_baseline", "B_sequential_only", "C_proposed"]
 
 
@@ -53,7 +54,9 @@ def run_pipeline(
     # 2. Evidence and Critical produce INDEPENDENT outputs (neither sees the other yet).
     # If a retrieval index was passed in, look up the top-k abstracts for this
     # claim ONCE and give the same context to both agents -- Evidence uses it
-    # to find support, Critical uses it to find what refutes it.
+    # to find support, Critical uses it to find what refutes it. The same
+    # `context` is also handed to the validator below, so a citation check
+    # (is this passage_id one of the ones actually retrieved?) is possible.
     context = None
     if retrieval_index is not None:
         context = retrieve(retrieval_index, research_question, k=top_k)
@@ -73,21 +76,25 @@ def run_pipeline(
 
     # 3. Sequential validation (conditions B and C)
     if condition in ("B_sequential_only", "C_proposed"):
-        validation_result = validate(planner_output, evidence_output, "Evidence")
+        validation_result = validate(planner_output, evidence_output, "Evidence", context=context)
     else:
         validation_result = ValidationResult(valid=True, reason="validation disabled (baseline)")
+    log_message(run_id, "HandoffValidator", "Guard", validation_result.model_dump())
 
     # 4. Peer-consistency check (condition C only)
     if condition == "C_proposed":
         peer_result = peer_check(evidence_output, critical_output)
     else:
         peer_result = PeerConsistencyResult(disagreement_score=0.0)
+    if condition == "C_proposed":
+        log_message(run_id, "PeerConsistencyChecker", "Guard", peer_result.model_dump())
 
     # 5. Guard decision
     if condition == "A_baseline":
         guard_result = GuardDecision(decision="ALLOW", explanation="baseline: no guard active")
     else:
         guard_result = decide(validation_result, peer_result)
+    log_message(run_id, "Guard", "Planner", guard_result.model_dump())
 
     # 6. Recovery: if the guard says RECOVER, actually regenerate Evidence's
     # output and verify it with the OTHER signal than the one that flagged it
@@ -96,18 +103,21 @@ def run_pipeline(
     final_evidence_output = evidence_output
     if guard_result.decision == "RECOVER":
         def regenerate_fn(_current_output):
-            return evidence_agent.produce(planner_output.subtask_evidence)
+            return evidence_agent.produce(planner_output.subtask_evidence, context=context)
 
         def verify_fn(new_output):
             if "sequential" in guard_result.triggered_by:
                 # sequential validator was the flag -> verify with peer check
                 return peer_check(new_output, critical_output).disagreement_score <= DISAGREEMENT_THRESHOLD
             # peer check was the flag -> verify with sequential validator
-            return validate(planner_output, new_output, "Evidence").valid
+            return validate(planner_output, new_output, "Evidence", context=context).valid
 
         final_evidence_output, recovered, verified, abstained = recover(
             evidence_output, regenerate_fn, verify_fn, guard_result.triggered_by
         )
+        log_message(run_id, "RecoveryModule", "Planner",
+                    {"recovered": recovered, "verified": verified, "abstained": abstained,
+                     "triggered_by": guard_result.triggered_by})
 
     # 7. Planner synthesis -- uses the (possibly recovered) Evidence output,
     # and is skipped on ABSTAIN so a report the pipeline couldn't verify
