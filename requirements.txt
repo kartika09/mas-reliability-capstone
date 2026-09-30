@@ -1,5 +1,6 @@
 pydantic>=2.0
 pytest>=7.0
+scikit-learn   # for cohen_kappa_score in evaluation/judge_reliability.py
 
 # Add these when you start implementing the real modules:
 sentence-transformers
