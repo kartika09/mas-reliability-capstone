@@ -1,6 +1,8 @@
 pydantic>=2.0
 pytest>=7.0
 scikit-learn   # for cohen_kappa_score in evaluation/judge_reliability.py
+groq           # for llm_client.GroqClient (real LLM calls)
+python-dotenv  # loads .env (gitignored) so the real GROQ_API_KEY never goes in git
 
 # Add these when you start implementing the real modules:
 sentence-transformers

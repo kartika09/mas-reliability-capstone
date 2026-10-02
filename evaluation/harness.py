@@ -380,9 +380,12 @@ def _make_llm_factory(name: str):
     if name == "mock":
         from llm_client import MockLLMClient
         return lambda seed: MockLLMClient()
+    if name == "groq":
+        from llm_client import GroqClient
+        GroqClient()  # eager check: fail fast before a long run, not on run #1
+        return lambda seed: GroqClient(seed=seed)
     raise NotImplementedError(
-        f"LLM backend {name!r} is not implemented yet. Fill in RealGrokClient in "
-        "llm_client.py, then return it here."
+        f"LLM backend {name!r} is not implemented. Known backends: 'mock', 'groq'."
     )
 
 
